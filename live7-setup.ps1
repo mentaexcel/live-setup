@@ -3,7 +3,7 @@
 #
 # 上から順に確認して、足りないものだけ入れる（初回3〜5分。2回目以降はすぐ終わる）
 #   ① Python        … 無ければ入れる（このユーザーだけに入れるので、管理者の許可は要らない）
-#   ② 部品          … faster-whisper（文字起こし）と PyAudioWPatch（パソコンの音を拾う）と openpyxl（商品一覧のExcelを読む）
+#   ② 部品          … faster-whisper（文字起こし）と PyAudioWPatch（パソコンの音を拾う）と openpyxl（商品一覧のExcelを読む）と python-docx（議事録のWordを作る）
 #   ③ 文字起こしAI  … small（約480MB）を先にダウンロードし、短い日本語で試す
 #   ④ パソコンの音  … スピーカーの音を拾えるか
 #   ⑤ ターミナル版の Claude Code … 作るアプリが中で claude -p を呼ぶので要る（デスクトップアプリとは別物・ログインも別）
@@ -59,7 +59,7 @@
     Step '② 部品（文字起こし・パソコンの音を拾う）を入れます…1〜3分'
     Write-Host '  画面が止まって見えても動いています。そのまま待ってください'
     # av 19 は faster-whisper 1.2.1 が渡す引数（metadata_errors）を受け付けず、文字起こしで止まるので 19 より前に固定する
-    & $py.Cmd -m pip install -q --disable-pip-version-check faster-whisper pyaudiowpatch openpyxl 'av<19'
+    & $py.Cmd -m pip install -q --disable-pip-version-check faster-whisper pyaudiowpatch openpyxl python-docx 'av<19'
     if ($LASTEXITCODE -ne 0) {
         Ng '部品のインストール' "Python $($py.Ver) に部品を入れられませんでした。上の英語のエラーも写るようにスクリーンショットを撮ってください。"
         return
