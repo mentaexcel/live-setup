@@ -58,7 +58,8 @@
     # ---- ② 部品 ----
     Step '② 部品（文字起こし・パソコンの音を拾う）を入れます…1〜3分'
     Write-Host '  画面が止まって見えても動いています。そのまま待ってください'
-    & $py.Cmd -m pip install -q --disable-pip-version-check faster-whisper pyaudiowpatch openpyxl
+    # av 19 は faster-whisper 1.2.1 が渡す引数（metadata_errors）を受け付けず、文字起こしで止まるので 19 より前に固定する
+    & $py.Cmd -m pip install -q --disable-pip-version-check faster-whisper pyaudiowpatch openpyxl 'av<19'
     if ($LASTEXITCODE -ne 0) {
         Ng '部品のインストール' "Python $($py.Ver) に部品を入れられませんでした。上の英語のエラーも写るようにスクリーンショットを撮ってください。"
         return
@@ -137,17 +138,27 @@ elif sys.argv[1] == 'loopback':
     Step '⑤ ターミナル版の Claude Code（作るアプリが中で使います）'
     $later = $null
     $env:Path = $env:Path + ';' + (Join-Path $HOME '.local\bin')
-    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+    # npm で入れた Claude Code には claude.ps1 があり、PowerShell の実行ポリシー（初期設定）で止められる。
+    # なので claude.exe か claude.cmd を探して、その場所を直接呼ぶ
+    function Find-Claude {
+        $apps = @(Get-Command claude -All -CommandType Application -ErrorAction SilentlyContinue)
+        $pick = $apps | Where-Object { $_.Source -like '*.exe' } | Select-Object -First 1
+        if (-not $pick) { $pick = $apps | Select-Object -First 1 }
+        if ($pick) { return $pick.Source }
+    }
+    $claude = Find-Claude
+    if (-not $claude) {
         Write-Host '  ターミナル版が入っていないので、公式の方法で入れます（1分ほど）'
         powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex"
+        $claude = Find-Claude
     }
     function Ask-Claude {
         Push-Location $tmp
-        $out = & claude -p 'Reply with just OK' --model haiku --output-format json --setting-sources project --strict-mcp-config --tools Read 2>&1 | Out-String
+        $out = & $claude -p 'Reply with just OK' --model haiku --output-format json --setting-sources project --strict-mcp-config --tools Read 2>&1 | Out-String
         Pop-Location
         return $out
     }
-    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+    if (-not $claude) {
         $later = 'ターミナル版の Claude Code を入れる'
     } else {
         $out = Ask-Claude
@@ -163,7 +174,7 @@ elif sys.argv[1] == 'loopback':
             Write-Host '    2. ログイン方法は「Claude account with subscription」を選ぶ'
             Write-Host '    3. ブラウザが開いたら「承認（Authorize）」を押す'
             Write-Host '    4. ログインできたら、その黒い画面は閉じてOK'
-            Start-Process powershell -WorkingDirectory $tmp -ArgumentList '-NoExit', '-Command', 'claude'
+            Start-Process -FilePath $claude -WorkingDirectory $tmp
             $wait = if ($env:LIVE7_LOGIN_WAIT) { [int]$env:LIVE7_LOGIN_WAIT } else { 300 }
             $deadline = (Get-Date).AddSeconds($wait)
             while ((Get-Date) -lt $deadline) {
