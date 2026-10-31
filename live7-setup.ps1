@@ -6,7 +6,8 @@
 #   ② 部品          … faster-whisper（文字起こし）と PyAudioWPatch（パソコンの音を拾う）
 #   ③ 文字起こしAI  … small（約480MB）を先にダウンロードし、短い日本語で試す
 #   ④ パソコンの音  … スピーカーの音を拾えるか
-#   ⑤ Claude Code   … 入っていて、ログインできているか（Haiku に1回だけ短く聞く）
+#   ⑤ ターミナル版の Claude Code … 作るアプリが中で claude -p を呼ぶので要る（デスクトップアプリとは別物・ログインも別）
+#                    無ければ公式の方法で入れ、ログインがまだならログイン用の画面を開く。できなければライブで一緒にやる
 # パソコンの設定は変えない。途中で止まったら、その画面を撮って講師に送ってもらう。
 
 & {
@@ -130,29 +131,59 @@ elif sys.argv[1] == 'loopback':
     }
     Ok 'パソコンの音'
 
-    # ---- ⑤ Claude Code ----
-    Step '⑤ Claude Code にログインできているか確かめます'
+    # ---- ⑤ ターミナル版の Claude Code ----
+    # 作るアプリは中で「claude -p」を呼ぶので、デスクトップアプリとは別にターミナル版が要る。ログインも別。
+    # ここで止めずに、できなかったものは「ライブで一緒にやる」に回す
+    Step '⑤ ターミナル版の Claude Code（作るアプリが中で使います）'
+    $later = $null
+    $env:Path = $env:Path + ';' + (Join-Path $HOME '.local\bin')
     if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
-        Ng 'Claude Code' 'Claude Code が見つかりません。講座で案内した手順で入れてから、もう一度この1行を実行してください。'
-        return
+        Write-Host '  ターミナル版が入っていないので、公式の方法で入れます（1分ほど）'
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex"
     }
-    Push-Location $tmp
-    $out = & claude -p 'Reply with just OK' --model haiku --output-format json --setting-sources project --strict-mcp-config --tools Read 2>&1 | Out-String
-    Pop-Location
-    if ($out -notmatch '"is_error"\s*:\s*false') {
-        if ($out -match 'login|expired|API key|authenticat') {
-            Ng 'Claude Code のログイン' 'ターミナルで claude と打って起動し、/login と入力して「Claude account with subscription」を選んでログインしてから、もう一度この1行を実行してください。'
-        } else {
-            Ng 'Claude Code' ('Claude Code から返事がありませんでした：' + $out.Trim())
+    function Ask-Claude {
+        Push-Location $tmp
+        $out = & claude -p 'Reply with just OK' --model haiku --output-format json --setting-sources project --strict-mcp-config --tools Read 2>&1 | Out-String
+        Pop-Location
+        return $out
+    }
+    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+        $later = 'ターミナル版の Claude Code を入れる'
+    } else {
+        $out = Ask-Claude
+        if ($out -match 'git-bash|git bash') {
+            $later = 'ターミナル版の Claude Code に必要な Git を入れる'
+        } elseif ($out -notmatch '"is_error"\s*:\s*false') {
+            # ログイン済みになったら認証ファイルが書き換わるので、それを待つ
+            $cfg = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+            $cred = Join-Path $cfg '.credentials.json'
+            $before = if (Test-Path $cred) { (Get-Item $cred).LastWriteTime } else { $null }
+            Write-Host '  ターミナル版のログインがまだなので、ログイン用の画面を開きます。' -ForegroundColor Yellow
+            Write-Host '    1. 新しく開いた黒い画面で、聞かれたことに Enter で答えていく'
+            Write-Host '    2. ログイン方法は「Claude account with subscription」を選ぶ'
+            Write-Host '    3. ブラウザが開いたら「承認（Authorize）」を押す'
+            Write-Host '    4. ログインできたら、その黒い画面は閉じてOK'
+            Start-Process powershell -WorkingDirectory $tmp -ArgumentList '-NoExit', '-Command', 'claude'
+            $wait = if ($env:LIVE7_LOGIN_WAIT) { [int]$env:LIVE7_LOGIN_WAIT } else { 300 }
+            $deadline = (Get-Date).AddSeconds($wait)
+            while ((Get-Date) -lt $deadline) {
+                Start-Sleep -Seconds 3
+                if ((Test-Path $cred) -and ((Get-Item $cred).LastWriteTime -ne $before)) { Start-Sleep -Seconds 2; break }
+            }
+            if ((Ask-Claude) -notmatch '"is_error"\s*:\s*false') { $later = 'ターミナル版の Claude Code にログインする' }
         }
-        return
     }
-    Ok 'Claude Code'
+    if ($later) {
+        Write-Host "  [あとで] $later（ライブで一緒にやるので、このままで大丈夫です）" -ForegroundColor Yellow
+    } else {
+        Ok 'ターミナル版の Claude Code'
+    }
 
     $took = (Get-Date) - $start
     Write-Host ''
     Write-Host '========================================' -ForegroundColor Green
     Write-Host '  準備OK！ ライブ当日はこのままで大丈夫です' -ForegroundColor Green
+    if ($later) { Write-Host "  （「$later」だけは、ライブで一緒にやります）" -ForegroundColor Green }
     Write-Host ('  （かかった時間：{0}分{1}秒）' -f [int][math]::Floor($took.TotalMinutes), $took.Seconds) -ForegroundColor Green
     Write-Host '========================================' -ForegroundColor Green
 }
